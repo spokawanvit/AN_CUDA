@@ -54,9 +54,11 @@ struct Parameters {
   real dtQ;
   real theta0;
   real theta1;
-  real charge[2];
-  real pos1[2];
-  real pos2[2];
+  int defnum;
+  real * charge;
+  real * xcord;           // x-coordinate of defects
+  real * ycord;           // y-coordinate of defects
+  real * local_theta;     // initial angles ADDED to each defect
   real lambda1;
   real lambda2;
   real lambda3;
@@ -147,6 +149,8 @@ int main() {
       RelaxIni();
     }
 
+    tStart = clock();
+
     evolve();
     MemFree();
   }
@@ -172,10 +176,10 @@ void evolve() {
       BounPeriF<<<P.Ny,P.Nx>>>(f);
       getRHS<<<P.Ny,P.Nx>>>(f);
       if (P.AdapTime==1) {
-	getMaxX<<<2*P.Ny,P.Nx,P.Nx*sizeof(real)>>>(f, dtQMX);
-	getDt<<<1,2*P.Ny,2*P.Ny*sizeof(real)>>>(dtQMX, dtQM, dt);
-	// cudaMemcpy(&DtRhoM,dtRhoM,sizeof(real),cudaMemcpyDeviceToHost);
-	cudaMemcpy(&Dt,dt,sizeof(real),cudaMemcpyDeviceToHost);
+      	getMaxX<<<2*P.Ny,P.Nx,P.Nx*sizeof(real)>>>(f, dtQMX);
+      	getDt<<<1,2*P.Ny,2*P.Ny*sizeof(real)>>>(dtQMX, dtQM, dt);
+      	// cudaMemcpy(&DtRhoM,dtRhoM,sizeof(real),cudaMemcpyDeviceToHost);
+      	cudaMemcpy(&Dt,dt,sizeof(real),cudaMemcpyDeviceToHost);
       }
       updateEuler<<<P.Ny,P.Nx>>>(f,dt);
     } else if (P.TimeScheme==2) {
@@ -191,9 +195,9 @@ void evolve() {
       string str_t;
       ss >> str_t;
       ExpoConf(str_t);
-        if (P.STDout_result == 1){
-          ShowProgress();
-        }
+      if (P.STDout_result == 1){
+        ShowProgress();
+      }
     }
 
     // Check.
@@ -311,10 +315,16 @@ __global__ void relaxQ(Fields ff, real * ddt) {
   int j=threadIdx.x;
   int idx=(blockDim.x+2*p.Nb)*(i+p.Nb)+j+p.Nb;
 
-  if (!(((j == floor(p.pos1[0])||j == ceil(p.pos1[0]))&&(i <= ceil(p.pos1[1])+1 && i >= floor(p.pos1[1])-1))
-  ||((j == floor(p.pos1[0])-1 || j == ceil(p.pos1[0])+1)&&(i == floor(p.pos1[1]) || i == ceil(p.pos1[1])))||
-  ((j == floor(p.pos2[0])||j == ceil(p.pos2[0]))&&(i <= ceil(p.pos2[1])+1 && i >= floor(p.pos2[1])-1))
-  ||((j == floor(p.pos2[0])-1 || j == ceil(p.pos2[0])+1)&&(i == floor(p.pos2[1]) || i == ceil(p.pos2[1]))))){
+  bool fixed = false;
+
+  for (int n = 0; n < p.defnum; n++) {
+    if (((j == floor(p.xcord[n]) || j == ceil(p.xcord[n]))&&(i <= ceil(p.ycord[n])+1 || i >= floor(p.ycord[n])))||
+    ((j == floor(p.xcord[n])-1||j == ceil(p.xcord[n])+1)&&(i == floor(p.ycord[n])|| i == ceil(p.ycord[n])))) {
+      fixed = true;
+    }
+  }
+
+  if (!fixed) {
     ff.Qxx[idx] += *ddt*ff.dtQxx[idx];
     ff.Qxy[idx] += *ddt*ff.dtQxy[idx];
   }
@@ -424,15 +434,17 @@ void GetInput() {
   InputFile >> P.Ts;
   InputFile >> P.dte;
   InputFile >> P.dtQ;
-
   InputFile >> P.theta0;
   InputFile >> P.theta1;
-  InputFile >> P.charge[0];
-  InputFile >> P.charge[1];
-  InputFile >> P.pos1[0]; // x-coordinate of 1st defect
-  InputFile >> P.pos1[1]; // y-coordinate of 1st defect
-  InputFile >> P.pos2[0]; // x-coordinate of 1st defect
-  InputFile >> P.pos2[1]; // y-coordinate of 1st defect
+  InputFile >> P.defnum;
+  P.charge = new real[P.defnum];
+  P.xcord = new real[P.defnum];
+  P.ycord = new real[P.defnum];
+  P.local_theta = new real[P.defnum];
+  for (int i = 0; i < P.defnum; i++) InputFile >> P.charge[i];
+  for (int i = 0; i < P.defnum; i++) InputFile >> P.xcord[i];
+  for (int i = 0; i < P.defnum; i++) InputFile >> P.ycord[i];
+  for (int i = 0; i < P.defnum; i++) InputFile >> P.local_theta[i];
   InputFile >> P.lambda1;
   InputFile >> P.lambda2;
   InputFile >> P.lambda3;
@@ -471,7 +483,6 @@ void InitConf() {
 
   // Copy parameters from host memory to device memory
   cudaMemcpyToSymbol(p,&P,sizeof(Parameters));
-
   cudaMemcpy(t,&T,sizeof(real),cudaMemcpyHostToDevice);
   cudaMemcpy(dt,&Dt,sizeof(real),cudaMemcpyHostToDevice);
 
@@ -479,11 +490,6 @@ void InitConf() {
   int idx;
   real theta;
   real S;
-
-  // In the case of defect pair
-  real pos_y[2] = {64.5,64.5};
-  real pos_x[2] = {48.5,80.5};
-  //real strength[2] = {-0.5,0.5};
 
   // Assigning initial average S for steady sate solution
   if (P.r <= 1) {
@@ -533,16 +539,16 @@ void InitConf() {
         idx=(P.Nx+2*P.Nb)*(i+P.Nb)+j+P.Nb;
 	double xi = sqrt(P.K/(P.A*(P.r-1)));
 	double Smax = sqrt((P.r-1)/P.r);
-	double r1 = sqrt(pow(j-P.pos1[0],2)+pow(i-P.pos1[1],2));
-	double r2 = sqrt(pow(j-P.pos2[0],2)+pow(i-P.pos2[1],2));
+	double r1 = sqrt(pow(j-P.xcord[0],2)+pow(i-P.ycord[0],2));
+	double r2 = sqrt(pow(j-P.xcord[1],2)+pow(i-P.ycord[1],2));
 	double theta1 = Pi; //negative charge
 	double theta2 = P.theta0; //positive charge
 
-	double deltaTheta = theta2-theta1+(strength[1]-strength[0])*atan2(P.pos1[1]-P.pos2[1],P.pos1[0]-P.pos2[0]);
-	double TTheta = theta1-strength[1]*atan2(P.pos1[1]-P.pos2[1],P.pos1[0]-P.pos2[0]);
+	double deltaTheta = theta2-theta1+(strength[1]-strength[0])*atan2(P.ycord[0]-P.ycord[1],P.xcord[0]-P.xcord[1]);
+	double TTheta = theta1-strength[1]*atan2(P.ycord[0]-P.ycord[1],P.xcord[0]-P.xcord[1]);
 
-	theta = strength[0]*atan2(i-P.pos1[1],j-P.pos1[0])+strength[1]*atan2(i-P.pos2[1],j-P.pos2[0])
-		+0.5*deltaTheta*(1+(log(pow(j-P.pos1[0],2)+pow(i-P.pos1[1],2))-log(pow(j-P.pos2[0],2)+pow(i-P.pos2[1],2)))/(log(pow(P.pos2[0]-P.pos1[0],2)+pow(P.pos2[1]-P.pos1[1],2))))+TTheta;
+	theta = strength[0]*atan2(i-P.ycord[0],j-P.xcord[0])+strength[1]*atan2(i-P.ycord[1],j-P.xcord[1])
+		+0.5*deltaTheta*(1+(log(pow(j-P.xcord[0],2)+pow(i-P.ycord[0],2))-log(pow(j-P.xcord[1],2)+pow(i-P.ycord[1],2)))/(log(pow(P.xcord[1]-P.xcord[0],2)+pow(P.ycord[1]-P.ycord[0],2))))+TTheta;
 	double Sr = Smax*0.5*(r1*sqrt((0.34+0.07*r1*r1)/(1+0.41*pow(r1,2)+0.07*pow(r1,4)))+r2*sqrt((0.34+0.07*r2*r2)/(1+0.41*pow(r2,2)+0.07*pow(r2,4))));
 
         F.Qxx[idx] = 0.5*Sr*cos(2*theta);
@@ -558,14 +564,14 @@ void InitConf() {
         idx=(P.Nx+2*P.Nb)*(i+P.Nb)+j+P.Nb;
         double xi = 1.5*sqrt(P.K/(P.A*(P.r-1)))/P.h;
         double Smax = sqrt((P.r-1)/P.r);
-        double r1 = sqrt(pow(j-P.pos1[0],2)+pow(i-P.pos1[1],2))/xi;
-        double r2 = sqrt(pow(j-P.pos2[0],2)+pow(i-P.pos2[1],2))/xi;
+        double r1 = sqrt(pow(j-P.xcord[0],2)+pow(i-P.ycord[0],2))/xi;
+        double r2 = sqrt(pow(j-P.xcord[1],2)+pow(i-P.ycord[1],2))/xi;
 
-        double deltaTheta = P.theta1-P.theta0+(P.charge[1]-P.charge[0])*atan2(P.pos1[1]-P.pos2[1],P.pos1[0]-P.pos2[0]);
-        double TTheta = P.theta0-P.charge[1]*atan2(P.pos1[1]-P.pos2[1],P.pos1[0]-P.pos2[0]);
+        double deltaTheta = P.theta1-P.theta0+(P.charge[1]-P.charge[0])*atan2(P.ycord[0]-P.ycord[1],P.xcord[0]-P.xcord[1]);
+        double TTheta = P.theta0-P.charge[1]*atan2(P.ycord[0]-P.ycord[1],P.xcord[0]-P.xcord[1]);
 
-        theta = P.charge[0]*atan2(i-P.pos1[1],j-P.pos1[0])+P.charge[1]*atan2(i-P.pos2[1],j-P.pos2[0])
-                +0.5*deltaTheta*(1+(log(pow(j-P.pos1[0],2)+pow(i-P.pos1[1],2))-log(pow(j-P.pos2[0],2)+pow(i-P.pos2[1],2)))/(log(pow(P.pos2[0]-P.pos1[0],2)+pow(P.pos2[1]-P.pos1[1],2))))+TTheta;
+        theta = P.charge[0]*atan2(i-P.ycord[0],j-P.xcord[0])+P.charge[1]*atan2(i-P.ycord[1],j-P.xcord[1])
+                +0.5*deltaTheta*(1+(log(pow(j-P.xcord[0],2)+pow(i-P.ycord[0],2))-log(pow(j-P.xcord[1],2)+pow(i-P.ycord[1],2)))/(log(pow(P.xcord[1]-P.xcord[0],2)+pow(P.ycord[1]-P.ycord[0],2))))+TTheta;
         double Sr = -Smax+Smax*(r1*sqrt((0.34+0.07*r1*r1)/(1+0.41*pow(r1,2)+0.07*pow(r1,4)))+r2*sqrt((0.34+0.07*r2*r2)/(1+0.41*pow(r2,2)+0.07*pow(r2,4))));
 
         F.Qxx[idx] = 0.5*Sr*cos(2*theta);
@@ -578,11 +584,13 @@ void InitConf() {
     for (int i=0; i<P.Ny; i++) {
       for (int j=0; j<P.Nx; j++) {
         idx=(P.Nx+2*P.Nb)*(i+P.Nb)+j+P.Nb;
-        theta = P.theta0;
+        theta = 0;
+        double Sr = 0;
 
+        /* For periodic boundary condition
         double Smax = sqrt((P.r-1)/P.r);
-        double r1 = sqrt(pow(j-P.pos1[0],2)+pow(i-P.pos1[1],2));
-        double r2 = sqrt(pow(j-P.pos2[0],2)+pow(i-P.pos2[1],2));
+        double r1 = sqrt(pow(j-P.xcord[0],2)+pow(i-P.ycord[0],2));
+        double r2 = sqrt(pow(j-P.xcord[1],2)+pow(i-P.ycord[1],2));
 
         for (int n= -20 ; n < 21; n++){
           for (int m = -20; m < 21; m++){
@@ -592,6 +600,20 @@ void InitConf() {
           }
         }
         double Sr = Smax*0.5*(r1*sqrt((0.34+0.07*r1*r1)/(1+0.41*pow(r1,2)+0.07*pow(r1,4)))+r2*sqrt((0.34+0.07*r2*r2)/(1+0.41*pow(r2,2)+0.07*pow(r2,4))));
+        F.Qxx[idx] = 0.5*Sr*cos(2*theta);
+        F.Qxy[idx] = 0.5*Sr*sin(2*theta);
+        */
+
+        for (int n = 0; n < P.defnum; n++) {
+          double rn = sqrt(pow(j-P.xcord[n],2)+pow(i-P.ycord[n],2));
+          double BubbleRadius = 10; // radius for bubble around defect in which we will add a localized constant phase to correct initial angle of defect polarization.
+          real LocalizedPhase = P.local_theta[n]/(1+exp(rn-BubbleRadius));
+          theta += P.charge[n]*atan2(i-P.ycord[n],j-P.xcord[n])+LocalizedPhase;
+          Sr += rn*sqrt((0.34+0.07*rn*rn)/(1+0.41*rn*rn+0.07*pow(rn,4)));
+        }
+
+        double Smax = sqrt((P.r-1)/P.r);
+        Sr *= Smax/P.defnum;
         F.Qxx[idx] = 0.5*Sr*cos(2*theta);
         F.Qxy[idx] = 0.5*Sr*sin(2*theta);
       }
