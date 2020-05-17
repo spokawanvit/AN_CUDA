@@ -3,7 +3,7 @@
 Pi=3.1415926535897932384626433832795
 TimeScheme=1                      # 1-Euler, 2-RK4
 AdapTime=0                        # 0-dt=dt0, 1-Adpative time step.
-InitCond=5                        # 1-Uniform, 2-Randomized, 3-testing sine, 4-a pair of defects solution from Tang et al., 5-a pair of defect solution from sum of isolated defect solution, 6-Load From last Frame
+InitCond=4                        # 1-Uniform, 2-Randomized, 3-testing sine, 4-a pair of defects solution from Tang et al., 5-a pair of defect solution from sum of isolated defect solution, 6-Load From last Frame
 Nx=256
 Ny=256
 Nb=3                              # Boundary width.
@@ -14,7 +14,7 @@ dte=1.0                           # Time resolution of output
 dtQ=0.01                          # Maximum change in Q for calculation of adaptive timestep
 ReadSuccess=1                     # Used to check if input file is correctly read.
 ShowProgress=1 		                # Show current calculation progress
-Relax=0                           # Relax initial configuration for InitCond=4
+Relax=1                           # Relax initial configuration for InitCond=4
 theta0=$Pi                        # Initial angle for uniform distribution or in defect pair
 theta1=0                          # Initial angle for second charge in defect pair
 defnum=4                          # number of defects
@@ -44,7 +44,7 @@ theta0=$(bc <<< 'scale=31; (-0.5*'$angle0')*'$Pi'/180')
 theta1=$(bc <<< 'scale=31; (-0.5*'$angle1'-90)*'$Pi'/180')
 pos1="$(bc <<< 'scale=1; 128.5-'$dist'/2') 128.5"
 pos2="$(bc <<< 'scale=1; 128.5+'$dist'/2') 128.5"
-local_theta="$(bc <<< 'scale=31; 45*'$Pi'/180') $(bc <<< 'scale=31; 45*'$Pi'/180') $(bc <<< 'scale=31; 45*'$Pi'/180') $(bc <<< 'scale=31; 45*'$Pi'/180')"
+local_theta="$(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180')"
 echo $TimeScheme > input.dat
 echo $AdapTime >> input.dat
 echo $InitCond >> input.dat
