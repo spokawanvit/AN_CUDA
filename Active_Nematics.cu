@@ -149,6 +149,7 @@ int main() {
     // Add a part that check if old data files exist and delete them.
     initRandSeed();
     MemAlloc();
+    GetDAInput();
     InitConf();
 
     if (P.Relax==1) {

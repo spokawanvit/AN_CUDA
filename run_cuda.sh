@@ -3,7 +3,7 @@
 Pi=3.1415926535897932384626433832795
 TimeScheme=1                      # 1-Euler, 2-RK4
 AdapTime=0                        # 0-dt=dt0, 1-Adpative time step.
-InitCond=4                        # 1-Uniform, 2-Randomized, 3-testing sine, 4-a pair of defects solution from Tang et al., 5-a pair of defect solution from sum of isolated defect solution, 6-Load From last Frame
+InitCond=5                        # 1-Uniform, 2-Randomized, 3-testing sine, 4-a pair of defects solution from Tang et al., 5-a pair of defect solution from sum of isolated defect solution, 6-Load From last Frame
 Nx=256
 Ny=256
 Nb=3                              # Boundary width.
@@ -44,7 +44,7 @@ theta0=$(bc <<< 'scale=31; (-0.5*'$angle0')*'$Pi'/180')
 theta1=$(bc <<< 'scale=31; (-0.5*'$angle1'-90)*'$Pi'/180')
 pos1="$(bc <<< 'scale=1; 128.5-'$dist'/2') 128.5"
 pos2="$(bc <<< 'scale=1; 128.5+'$dist'/2') 128.5"
-local_theta="$(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180')"
+local_phase="$(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180') $(bc <<< 'scale=31; 0*'$Pi'/180')"
 echo $TimeScheme > input.dat
 echo $AdapTime >> input.dat
 echo $InitCond >> input.dat
@@ -59,10 +59,6 @@ echo $dtQ >> input.dat
 echo $theta0 >> input.dat
 echo $theta1 >> input.dat
 echo $defnum >> input.dat
-echo $charge >> defect.dat
-echo $xcoord >> defect.dat
-echo $ycoord >> defect.dat
-echo $local_phase >> defect.dat
 echo $lambda1 >> input.dat
 echo $lambda2 >> input.dat
 echo $lambda3 >> input.dat
@@ -79,6 +75,13 @@ echo $kappa >> input.dat
 echo $ReadSuccess >> input.dat
 echo $ShowProgress >> input.dat
 echo $Relax >> input.dat
+
+
+echo $charge > defect.dat
+echo $xcoord >> defect.dat
+echo $ycoord >> defect.dat
+echo $local_phase >> defect.dat
+
 if [ -d "data" ]
 then
 rm -rf `pwd`/data
@@ -90,6 +93,6 @@ mkdir data
 ./a.out
 
 #mv data data_pp_alpha=$alpha
-mv data data_angle=90
 #mv data data_angle=$angle1\_alpha=$alpha
 done
+#nvcc --cudart=shared Active_Nematics.cu -lcufft
