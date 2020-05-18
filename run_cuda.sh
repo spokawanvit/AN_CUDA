@@ -19,8 +19,8 @@ theta0=$Pi                        # Initial angle for uniform distribution or in
 theta1=0                          # Initial angle for second charge in defect pair
 defnum=4                          # number of defects
 charge="-0.5 0.5 0.5 -0.5"        # Charge of defects for InitCond = 4
-xcord="76.5 76.5 178.5 178.5"
-ycord="178.5 76.5 178.5 76.5"
+xcoord="76.5 76.5 178.5 178.5"
+ycoord="178.5 76.5 178.5 76.5"
 lambda1=1.5
 lambda2=-1
 lambda3=1.5
@@ -59,10 +59,10 @@ echo $dtQ >> input.dat
 echo $theta0 >> input.dat
 echo $theta1 >> input.dat
 echo $defnum >> input.dat
-echo $charge >> input.dat
-echo $xcord >> input.dat
-echo $ycord >> input.dat
-echo $local_theta >> input.dat
+echo $charge >> defect.dat
+echo $xcoord >> defect.dat
+echo $ycoord >> defect.dat
+echo $local_phase >> defect.dat
 echo $lambda1 >> input.dat
 echo $lambda2 >> input.dat
 echo $lambda3 >> input.dat
